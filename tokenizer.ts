@@ -1,0 +1,441 @@
+namespace Q.Tokenizer {
+  /**
+   * The `.kind` property for all of the tokens.
+   */
+  export enum TokenKind {
+    NUMERIC_LITERAL,
+    STRING_LITERAL,
+    PUNCTUATION,
+    OPERATOR,
+    ASSIGNMENT_OPERATOR,
+    RELATIONAL_OPERATOR,
+    IDENTIFIER,
+    NEW_LINE
+  }
+
+  /**
+   * A token is an atomic unit in the language grammar it can be any of the
+   * following:
+   */
+  export type Token =
+    | NumericLiteralToken
+    | StringLiteralToken
+    | PunctuationToken
+    | AssignmentOperatorToken
+    | OperatorToken
+    | RelationalOperatorToken
+    | IdentifierToken
+    | NewLineToken;
+
+  /**
+   * Shared properties by all of the tokens.
+   */
+  type TokenBase = {
+    /**
+     * Start position for this token.
+     */
+    position: Source.Position;
+  };
+
+  /**
+   * A numeric literal token is a token representing any number in the source
+   * file.
+   */
+  export type NumericLiteralToken = TokenBase & {
+    kind: TokenKind.NUMERIC_LITERAL;
+
+    /**
+     * An un-parsed string value representing the number.
+     */
+    value: string;
+  };
+
+  /**
+   * A string literal can be either a Double Quote a Single Quote.
+   */
+  export type StringLiteralToken = TokenBase & {
+    kind: TokenKind.STRING_LITERAL;
+
+    /**
+     * Un-parsed value for a string literal.
+     */
+    value: string;
+  };
+
+  /**
+   * Every valid punctuation in the source file.
+   */
+  export type Punctuation = ";" | "." | ":" | "(" | ")" | "{" | "}" | "[" | "]";
+
+  /**
+   * A punctuation in the source.
+   */
+  export type PunctuationToken = TokenBase & {
+    kind: TokenKind.PUNCTUATION;
+
+    /**
+     * Type of the punctuation.
+     */
+    punctuation: Punctuation;
+  };
+
+  /**
+   * Every valid assignment operator in the source file.
+   */
+  export type AssignmentOperator = "=" | "+=" | "-+" | "*=" | "/=" | "%=";
+
+  /**
+   * An assignment operator in the source.
+   */
+  export type AssignmentOperatorToken = TokenBase & {
+    kind: TokenKind.ASSIGNMENT_OPERATOR;
+
+    /**
+     * Type of the operator.
+     */
+    operator: AssignmentOperator;
+  };
+
+  /**
+   * Every valid unary or binary operator in the source.
+   */
+  export type Operator =
+    | "+"
+    | "-"
+    | "*"
+    | "/"
+    | "%"
+    | "|"
+    | "&"
+    | "^"
+    | "!"
+    | "||"
+    | "&&"
+    | "**"
+    | "++"
+    | "--";
+
+  /**
+   * An operator in the source file.
+   */
+  export type OperatorToken = TokenBase & {
+    kind: TokenKind.OPERATOR;
+
+    /**
+     * Type of the operator.
+     */
+    operator: Operator;
+  };
+
+  /**
+   * All of the valid comparison operator in the source.
+   */
+  export type RelationalOperator = "<" | ">" | "==" | "!=";
+
+  /**
+   * A relation operator in the source file.
+   */
+  export type RelationalOperatorToken = TokenBase & {
+    kind: TokenKind.RELATIONAL_OPERATOR;
+
+    /**
+     * Type of the operator.
+     */
+    operator: RelationalOperator;
+  };
+
+  /**
+   * An identifier token.
+   */
+  export type IdentifierToken = TokenBase & {
+    kind: TokenKind.IDENTIFIER;
+
+    /**
+     * Name of the identifer.
+     */
+    name: string;
+
+    /**
+     * Whatever this identifier is a possible keyword or not.
+     */
+    keyword?: boolean;
+  };
+
+  /**
+   * A new line token - Yes new line tokens are emitted by the TokenStream.
+   */
+  export type NewLineToken = TokenBase & {
+    kind: TokenKind.NEW_LINE;
+  };
+
+  /**
+   * An implementation for a token stream.
+   */
+  export class TokenStream {
+    /**
+     * The current token in the stack. (There is no stack!)
+     */
+    private current: Token | null = null;
+
+    /**
+     * The current position in the source.
+     */
+    private cursor = 0;
+
+    /**
+     * Content of the `source`, just for localization.
+     */
+    private text: string;
+
+    /**
+     * Constructs a new TokenStream from the given source file.
+     *
+     * @Note The source file must be loaded in order to be used.
+     * @param source The source file.
+     */
+    constructor(readonly source: Source.File) {
+      this.text = source.getContentSync();
+    }
+
+    /**
+     * Helper function to read an escaped sequence of bytes.
+     *
+     * @param escape The end character or the character we want to unescape.
+     */
+    private readEscaped(escape: string): string {
+      let escaped = false;
+      let str = "";
+      ++this.cursor;
+      while (this.text[this.cursor]) {
+        var ch = this.text[this.cursor++];
+        if (escaped) {
+          str += ch;
+          escaped = false;
+        } else if (ch == "\\") {
+          escaped = true;
+        } else if (ch == escape) {
+          return str;
+        } else {
+          str += ch;
+        }
+      }
+      // Report an error.
+      this.source.addParseError(
+        new Errors.UnterminatedStringLiteral(
+          new Source.Position(this.source, this.cursor)
+        )
+      );
+      // But keep working :D
+      return str;
+    }
+
+    /**
+     * Helper function to match regular expressions.
+     *
+     * @param regExp The regular expression we want to match against.
+     */
+    private regExp(regExp: RegExp): string {
+      const text = this.text.slice(this.cursor);
+      const matches = regExp.exec(text);
+      if (!matches) return "";
+      const match = matches[0];
+      this.cursor += match.length;
+      return match;
+    }
+
+    /**
+     * Skip white spaces expect "\r" and "\n" (a.k.a New line feeds)
+     */
+    private skipWhiteSpace() {
+      let ch = this.text[this.cursor];
+      while (/\s/.test(ch) && !(ch === "\n" || ch === "\r"))
+        ch = this.text[++this.cursor];
+    }
+
+    /**
+     * Read the next token skipping the trimming white spaces.
+     */
+    private readNext(): Token | null {
+      this.skipWhiteSpace();
+
+      const start = this.cursor;
+      const ch0 = this.text[this.cursor];
+      const ch1 = this.text[this.cursor + 1];
+
+      if (ch0 === undefined) return null;
+
+      if (ch0 === "\n") {
+        ++this.cursor;
+        return {
+          kind: TokenKind.NEW_LINE,
+          position: new Source.Position(this.source, start)
+        };
+      }
+
+      if (ch0 === "\r") {
+        if (ch1 === "\n") {
+          this.cursor += 2;
+          return {
+            kind: TokenKind.NEW_LINE,
+            position: new Source.Position(this.source, start)
+          };
+        }
+        ++this.cursor;
+        return this.readNext();
+      }
+
+      if (/\d/.test(ch0) || (ch0 === "." && /\d/.test(ch1))) {
+        const value = this.regExp(/^\d*\.\d+/);
+        return {
+          kind: TokenKind.NUMERIC_LITERAL,
+          value,
+          position: new Source.Position(this.source, start)
+        };
+      }
+
+      if (/a-zA-Z\$_/.test(ch0)) {
+        const name = this.regExp(/^[a-zA-Z\$_][a-zA-Z0-9_\-]*/);
+        return {
+          kind: TokenKind.IDENTIFIER,
+          name,
+          position: new Source.Position(this.source, start)
+        };
+      }
+
+      if (ch0 === '"' || ch0 === "'") {
+        const value = this.readEscaped(ch0);
+        return {
+          kind: TokenKind.STRING_LITERAL,
+          value,
+          position: new Source.Position(this.source, start)
+        };
+      }
+
+      const w2 = ch0 + ch1;
+
+      if (ch1 === "=") {
+        switch (ch0) {
+          case "=":
+          case "!":
+            this.cursor += 2;
+            return {
+              kind: TokenKind.RELATIONAL_OPERATOR,
+              operator: w2 as RelationalOperator,
+              position: new Source.Position(this.source, start)
+            };
+          case "-":
+          case "+":
+          case "*":
+          case "/":
+          case "%":
+            this.cursor += 2;
+            return {
+              kind: TokenKind.ASSIGNMENT_OPERATOR,
+              operator: w2 as AssignmentOperator,
+              position: new Source.Position(this.source, start)
+            };
+        }
+      }
+
+      if (ch0 === ch1) {
+        switch (ch0) {
+          case "|":
+          case "&":
+          case "*":
+          case "+":
+          case "-":
+            this.cursor += 2;
+            return {
+              kind: TokenKind.OPERATOR,
+              operator: w2 as Operator,
+              position: new Source.Position(this.source, start)
+            };
+        }
+      }
+
+      switch (ch0) {
+        case "+":
+        case "-":
+        case "*":
+        case "/":
+        case "%":
+        case "|":
+        case "&":
+        case "^":
+        case "!":
+          ++this.cursor;
+          return {
+            kind: TokenKind.OPERATOR,
+            operator: ch0,
+            position: new Source.Position(this.source, start)
+          };
+        case "<":
+        case ">":
+          ++this.cursor;
+          return {
+            kind: TokenKind.RELATIONAL_OPERATOR,
+            operator: ch0,
+            position: new Source.Position(this.source, start)
+          };
+        case "=":
+          ++this.cursor;
+          return {
+            kind: TokenKind.ASSIGNMENT_OPERATOR,
+            operator: "=",
+            position: new Source.Position(this.source, start)
+          };
+        case ";":
+        case ".":
+        case ":":
+        case "(":
+        case ")":
+        case "{":
+        case "}":
+        case "[":
+        case "]":
+          ++this.cursor;
+          return {
+            kind: TokenKind.PUNCTUATION,
+            punctuation: ch0,
+            position: new Source.Position(this.source, start)
+          };
+      }
+
+      // Report an error.
+      this.source.addParseError(
+        new Errors.UnexpectedCharacterError(
+          new Source.Position(this.source, start)
+        )
+      );
+
+      // Yes there was an error an we reported it, but keep moving forward.
+      // We always want to parse the source code even if it's in a broken
+      // state.
+      ++this.cursor;
+      return this.readNext();
+    }
+
+    /**
+     * Peek the current token.
+     */
+    peek() {
+      return this.current || (this.current = this.readNext());
+    }
+
+    /**
+     * Return the current token and advance to the next.
+     */
+    next() {
+      const token = this.current;
+      this.current = null;
+      return token || this.readNext();
+    }
+
+    /**
+     * Have we reached the end of file?
+     */
+    eof() {
+      return this.peek() === null;
+    }
+  }
+}

@@ -14,6 +14,34 @@ namespace Q.Source {
     private linesCache: string[] | undefined;
 
     /**
+     * Parse errors for this source file.
+     */
+    private parseErrors: Errors.ParseError[] = [];
+
+    /**
+     * Add a new parse error to this source file.
+     *
+     * @param error The parse error which you want to report.
+     */
+    addParseError(error: Errors.ParseError) {
+      this.parseErrors.push(error);
+    }
+
+    /**
+     * Return list of all the parse errors in this document.
+     */
+    getParseErrors() {
+      return this.parseErrors.slice();
+    }
+
+    /**
+     * Whatever this source file has any error or not.
+     */
+    get hasError() {
+      return this.parseErrors.length > 0;
+    }
+
+    /**
      * Constructs a new source file.
      *
      * @param path Path to the file - must be resolvable by our System I/O API.
@@ -85,7 +113,7 @@ namespace Q.Source {
   /**
    * A location object represents a location at one specific source file.
    */
-  export class Location {
+  export class Position {
     /**
      * Cache of the `lookupLineNumberAndColumn` call with this location's position.
      */
@@ -128,6 +156,21 @@ namespace Q.Source {
       return this.locationCache[1];
     }
   }
+
+  /**
+   * An area in the source file.
+   */
+  export interface Location {
+    /**
+     * Starting position (inclusive)
+     */
+    start: Position;
+
+    /**
+     * End position (inclusive)
+     */
+    end: Position;
+  }
 }
 
 /**
@@ -146,7 +189,7 @@ namespace Q.Source.Graph {
    * @param path Path to the file.
    */
   export function getFile(path: string): File {
-    let value: File;
+    let value: File | undefined;
     if ((value = fileMap.get(path))) return value;
     value = new File(path);
     fileMap.set(path, value);
