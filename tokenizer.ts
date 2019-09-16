@@ -284,8 +284,8 @@ namespace Q.Tokenizer {
         return this.readNext();
       }
 
-      if (/\d/.test(ch0) || (ch0 === "." && /\d/.test(ch1))) {
-        const value = this.regExp(/^\d*\.\d+/);
+      if (/\d/.test(ch0)) {
+        const value = this.regExp(/^\d+(\.\d+)?/);
         return {
           kind: TokenKind.NUMERIC_LITERAL,
           value,
@@ -293,7 +293,16 @@ namespace Q.Tokenizer {
         };
       }
 
-      if (/a-zA-Z\$_/.test(ch0)) {
+      if (ch0 === "." && /\d/.test(ch1)) {
+        const value = this.regExp(/^\.\d+/);
+        return {
+          kind: TokenKind.NUMERIC_LITERAL,
+          value,
+          position: new Source.Position(this.source, start)
+        };
+      }
+
+      if (/[a-zA-Z\$_]/.test(ch0)) {
         const name = this.regExp(/^[a-zA-Z\$_][a-zA-Z0-9_\-]*/);
         return {
           kind: TokenKind.IDENTIFIER,

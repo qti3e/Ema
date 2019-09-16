@@ -38,7 +38,6 @@ namespace Q.System {
       throw new Error("Current IO handler is not registered yet.");
     },
     configurable: true,
-    writable: false,
     enumerable: true
   });
 }
