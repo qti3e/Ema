@@ -2,10 +2,9 @@ const Q = require("./build/q");
 
 class Handler extends Q.System.IOHandlerBase {
   async read() {
-    return `let x = 5;
-    return 5.3;
-    return  
-    t;`;
+    return `
+    func x(a bcd,, c d)
+    `;
   }
 }
 
@@ -13,13 +12,14 @@ Q.System.setIOHandler(new Handler());
 
 async function main() {
   const source = Q.Source.Graph.getFile("./main.js");
-  await source.getContent();
+  const text = await source.getContent();
 
-  const stream = new Q.Tokenizer.TokenStream(source);
-
-  while (!stream.eof()) {
-    console.log(stream.next());
+  const result = Q.Parser.parse(source);
+  // console.log(source.hasError, result);
+  for (const err of source.getParseErrors()) {
+    console.log(err.toString());
   }
+
 }
 
 main();

@@ -19,6 +19,11 @@ namespace Q.Source {
     private parseErrors: Errors.ParseError[] = [];
 
     /**
+     * Cache of the line map used in lookupLineNumberAndColumn.
+     */
+    private lineLengthMapCache: number[] | undefined;
+
+    /**
      * Add a new parse error to this source file.
      *
      * @param error The parse error which you want to report.
@@ -74,7 +79,8 @@ namespace Q.Source {
      */
     getLinesSync(): string[] {
       if (this.linesCache) return this.linesCache.slice();
-      this.linesCache = this.getContentSync().split(/\r?\n/g);
+      this.linesCache = this.getContentSync().match(/.*(\r?\n)?/g)!;
+      this.linesCache.pop();
       return this.linesCache.slice();
     }
 
@@ -93,20 +99,34 @@ namespace Q.Source {
      * @returns {[number, number]} Returns the tuple `[line, column]`.
      */
     lookupLineNumberAndColumn(position: number): [number, number] {
-      if (position === 0) return [1, 1];
-      if (position < 0) return [0, 0];
+      if (!this.lineLengthMapCache) {
+        const map: number[] = [];
+        let current = 0;
+        const lines = this.getLinesSync();
+        for (const line of lines) {
+          map.push(current);
+          current += line.length;
+        }
+        this.lineLengthMapCache = map;
+      }
 
-      const lines = this.getLinesSync();
-      let currentLineIndex = 0;
-      let len = 0;
+      const map = this.lineLengthMapCache!;
+      let index = Math.floor(map.length / 2);
+      let step = Math.ceil(map.length / 4);
 
-      if (position > this.contentCache!.length)
-        throw new Error("Source offset out of range.");
+      while (index < map.length) {
+        if (map[index] > position) {
+          index -= step;
+        } else {
+          if (map[index + 1] > position) {
+            return [index + 1, position - map[index] + 1];
+          }
+          index += step;
+        }
+        step = Math.floor(step / 2);
+      }
 
-      while (position > (len = lines[currentLineIndex++].length))
-        position -= len;
-
-      return [currentLineIndex + 1, position + 1];
+      return [index, position - map[map.length - 1] + 1];
     }
   }
 
@@ -154,6 +174,31 @@ namespace Q.Source {
           this.position
         );
       return this.locationCache[1];
+    }
+
+    /**
+     * Return the line from source for he current position.
+     */
+    getLine(): string {
+      const lineNo = this.lineNumber;
+      return this.source.getLinesSync()[lineNo - 1].trimRight();
+    }
+
+    /**
+     * Returns a string in the path:line:col format.
+     */
+    getUri(): string {
+      return `${this.path}:${this.lineNumber}:${this.column}`;
+    }
+
+    /**
+     * Adds the given number to the current position returning a new one.
+     * 
+     * @param count The number to be added to the current position.
+     */
+    add(count: number) {
+      if (count === 0) return this;
+      return new Position(this.source, this.position + count);
     }
   }
 

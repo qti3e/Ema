@@ -1,4 +1,4 @@
-namespace Q.Tokenizer {
+namespace Q.Scanner {
   /**
    * The `.kind` property for all of the tokens.
    */
@@ -35,6 +35,11 @@ namespace Q.Tokenizer {
      * Start position for this token.
      */
     position: Source.Position;
+
+    /**
+     * Length of this token.
+     */
+    length: number;
   };
 
   /**
@@ -65,7 +70,17 @@ namespace Q.Tokenizer {
   /**
    * Every valid punctuation in the source file.
    */
-  export type Punctuation = ";" | "." | ":" | "(" | ")" | "{" | "}" | "[" | "]";
+  export type Punctuation =
+    | ";"
+    | "."
+    | ":"
+    | ","
+    | "("
+    | ")"
+    | "{"
+    | "}"
+    | "["
+    | "]";
 
   /**
    * A punctuation in the source.
@@ -268,7 +283,8 @@ namespace Q.Tokenizer {
         ++this.cursor;
         return {
           kind: TokenKind.NEW_LINE,
-          position: new Source.Position(this.source, start)
+          position: new Source.Position(this.source, start),
+          length: 1
         };
       }
 
@@ -277,7 +293,8 @@ namespace Q.Tokenizer {
           this.cursor += 2;
           return {
             kind: TokenKind.NEW_LINE,
-            position: new Source.Position(this.source, start)
+            position: new Source.Position(this.source, start),
+            length: 2
           };
         }
         ++this.cursor;
@@ -289,7 +306,8 @@ namespace Q.Tokenizer {
         return {
           kind: TokenKind.NUMERIC_LITERAL,
           value,
-          position: new Source.Position(this.source, start)
+          position: new Source.Position(this.source, start),
+          length: value.length
         };
       }
 
@@ -298,7 +316,8 @@ namespace Q.Tokenizer {
         return {
           kind: TokenKind.NUMERIC_LITERAL,
           value,
-          position: new Source.Position(this.source, start)
+          position: new Source.Position(this.source, start),
+          length: value.length
         };
       }
 
@@ -307,7 +326,8 @@ namespace Q.Tokenizer {
         return {
           kind: TokenKind.IDENTIFIER,
           name,
-          position: new Source.Position(this.source, start)
+          position: new Source.Position(this.source, start),
+          length: name.length
         };
       }
 
@@ -316,7 +336,8 @@ namespace Q.Tokenizer {
         return {
           kind: TokenKind.STRING_LITERAL,
           value,
-          position: new Source.Position(this.source, start)
+          position: new Source.Position(this.source, start),
+          length: value.length
         };
       }
 
@@ -330,7 +351,8 @@ namespace Q.Tokenizer {
             return {
               kind: TokenKind.RELATIONAL_OPERATOR,
               operator: w2 as RelationalOperator,
-              position: new Source.Position(this.source, start)
+              position: new Source.Position(this.source, start),
+              length: 2
             };
           case "-":
           case "+":
@@ -341,7 +363,8 @@ namespace Q.Tokenizer {
             return {
               kind: TokenKind.ASSIGNMENT_OPERATOR,
               operator: w2 as AssignmentOperator,
-              position: new Source.Position(this.source, start)
+              position: new Source.Position(this.source, start),
+              length: 2
             };
         }
       }
@@ -357,7 +380,8 @@ namespace Q.Tokenizer {
             return {
               kind: TokenKind.OPERATOR,
               operator: w2 as Operator,
-              position: new Source.Position(this.source, start)
+              position: new Source.Position(this.source, start),
+              length: 2
             };
         }
       }
@@ -376,7 +400,8 @@ namespace Q.Tokenizer {
           return {
             kind: TokenKind.OPERATOR,
             operator: ch0,
-            position: new Source.Position(this.source, start)
+            position: new Source.Position(this.source, start),
+            length: 1
           };
         case "<":
         case ">":
@@ -384,18 +409,21 @@ namespace Q.Tokenizer {
           return {
             kind: TokenKind.RELATIONAL_OPERATOR,
             operator: ch0,
-            position: new Source.Position(this.source, start)
+            position: new Source.Position(this.source, start),
+            length: 1
           };
         case "=":
           ++this.cursor;
           return {
             kind: TokenKind.ASSIGNMENT_OPERATOR,
             operator: "=",
-            position: new Source.Position(this.source, start)
+            position: new Source.Position(this.source, start),
+            length: 1
           };
         case ";":
         case ".":
         case ":":
+        case ",":
         case "(":
         case ")":
         case "{":
@@ -406,7 +434,8 @@ namespace Q.Tokenizer {
           return {
             kind: TokenKind.PUNCTUATION,
             punctuation: ch0,
-            position: new Source.Position(this.source, start)
+            position: new Source.Position(this.source, start),
+            length: 1
           };
       }
 
@@ -446,5 +475,49 @@ namespace Q.Tokenizer {
     eof() {
       return this.peek() === null;
     }
+  }
+
+  /**
+   * An entity in the doubly linked-list, this list helps us control the
+   * navigation between tokens easier.
+   */
+  export class TokenListEntity {
+    /**
+     * The list is lazily evaluated from the stream.
+     * This property holds the computed value of the next token.
+     */
+    private nextCache?: TokenListEntity;
+
+    /**
+     * Constructs a new list entity.
+     *
+     * @param stream The stream this list is bounded to.
+     * @param prev The previous item
+     * @param token The current token in this entity.
+     */
+    constructor(
+      private readonly stream: TokenStream,
+      readonly prev: TokenListEntity | null,
+      readonly token: Token | null
+    ) {}
+
+    /**
+     * Returns the next element.
+     */
+    get next(): TokenListEntity {
+      if (this.nextCache) return this.nextCache;
+      const token = this.stream.next();
+      const entity = new TokenListEntity(this.stream, this, token);
+      return entity;
+    }
+  }
+
+  /**
+   * Constructs a new linked list from a TokenStream.
+   *
+   * @param stream A TokenStream to be used as the source.
+   */
+  export function toLinkedList(stream: TokenStream): TokenListEntity {
+    return new TokenListEntity(stream, null, stream.next());
   }
 }
