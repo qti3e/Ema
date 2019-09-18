@@ -3,24 +3,83 @@
  * code is in the most broken state.
  */
 namespace Q.Parser {
-  const stack: Scanner.TokenListEntity[] = [];
+  /**
+   * Parse a new Source file into an AST Source object and collect parse errors.
+   *
+   * @param source The source file to parse.
+   */
+  export function parse(source: Source.File): AST.Source {
+    currentSource = source;
+    const stream = new Scanner.TokenStream(source);
+    cursorStack.length = 0;
+    cursorStack.push((current = Scanner.toLinkedList(stream)));
+    // Skip new lines.
+    while (current.token && current.token.kind === Scanner.TokenKind.NEW_LINE)
+      current = current.next;
+    return readArray(declaration);
+  }
+
+  /**
+   * Every value that means negative in JS.
+   */
+  type False = false | null | undefined | 0 | void;
+
+  /**
+   * Turns a AST Node into a null writable structure.
+   */
+  type WritableContext<T extends AST.Node> = {
+    -readonly [key in keyof T]: T[key] | null;
+  };
+
+  /**
+   * Store the cursors.
+   */
+  const cursorStack: Scanner.TokenListEntity[] = [];
+
+  /**
+   * The current source file passed to parse() function.
+   */
   let currentSource: Source.File;
+
+  /**
+   * The current token list entity.
+   */
   let current: Scanner.TokenListEntity;
-  let ignoreErrors = false;
 
+  /**
+   * Yet another stack to store error frames.
+   * At the start of matching each Node we start a new error frame and all the
+   * reported errors will be published on that frame instead of the source file
+   * if that Node was used in the returned values we just add the errors to the
+   * source file, otherwise we just ignore all the collected errors.
+   */
+  const errorFrames: Errors.ParseError[][] = [];
+
+  /**
+   * Stores the current token in the cursor stack.
+   */
   function store() {
-    stack.push(current);
+    cursorStack.push(current);
   }
 
+  /**
+   * Restore the last position stored in the cursor stack.
+   */
   function restore() {
-    if (stack.length === 0) throw new Error("This is my fault.");
-    current = stack.pop()!;
+    if (cursorStack.length === 0) throw new Error("This is my fault.");
+    current = cursorStack.pop()!;
   }
 
+  /**
+   * Returns whatever we've reached end of file.
+   */
   function eof() {
     return current.token === null;
   }
 
+  /**
+   * Advance the current token.
+   */
   function next() {
     if (current.token === null) return;
     current = current.next;
@@ -28,241 +87,120 @@ namespace Q.Parser {
       current = current.next;
   }
 
-  function prev() {
-    if (!current.prev) throw new Error("This is my fault.");
-    current = current.prev!;
-    while (
-      current.token &&
-      current.token.kind === Scanner.TokenKind.NEW_LINE &&
-      current.prev
-    )
-      current = current.prev;
-  }
-
-  function currentPosition() {
-    if (current.token) return current.token.position;
-    return current.prev!.token!.position;
-  }
-
-  function reportError(error: Errors.ParseError) {
-    if (ignoreErrors) return;
-    currentSource.addParseError(error);
-  }
-
-  // !-----------------------End of cursor manipulation API.
-
-  export function parse(source: Source.File): AST.Source {
-    currentSource = source;
-    const stream = new Scanner.TokenStream(source);
-    stack.length = 0;
-    stack.push((current = Scanner.toLinkedList(stream)));
-    ignoreErrors = false;
-
-    const body = readArray(declaration);
-
-    return body;
+  /**
+   * Reports an error in the current error frame.
+   *
+   * @param errors List of parse errors.
+   */
+  function reportError(...errors: Errors.ParseError[]) {
+    if (errorFrames.length) {
+      errorFrames[errorFrames.length - 1].push(...errors);
+    } else {
+      for (const error of errors) currentSource.addParseError(error);
+    }
   }
 
   /**
-   * Read an array of Nodes without separator.
-   *
-   * @param cb Callback that collects the data.
-   * @param end Optional - Called when item is not matched and indicates
-   *  whatever we keep moving or return from the array.
+   * Adds a new error frame.
    */
-  function readArray<T>(cb: () => T | false, end?: () => boolean): T[] {
-    const result: T[] = [];
+  function addErrorFrame() {
+    errorFrames.push([]);
+  }
+
+  /**
+   * Pop the current error frame from the stack and report its collected errors
+   * if the report parameter is set to `true`.
+   *
+   * @param report Whatever to report the collected errors or ignore them.
+   */
+  function popErrorFrame(report: boolean) {
+    const errors = errorFrames.pop();
+    if (!errors) throw new Error("");
+    if (report) reportError(...errors);
+  }
+
+  // !-----------------------Start of the matcher API.
+
+  /**
+   * Reads an array of elements matched by the matcher.
+   *
+   * @param matcher The matcher callback used to match array items.
+   * @param end Optional callback to check if we can give up on the search or
+   *  not at the current position.
+   */
+  function readArray<T>(matcher: () => T | False, end?: () => boolean): T[] {
+    const collected: T[] = [];
 
     while (!eof()) {
-      while (current.token && current.token.kind === Scanner.TokenKind.NEW_LINE)
-        current = current.next;
-
-      const item = cb();
-
-      if (!item) {
-        if (end && end()) break;
+      const value = matcher();
+      if (value) {
+        collected.push(value);
+      } else if (end && end()) {
+        break;
+      } else {
         // Report the error.
         reportError(new Errors.UnexpectedToken(current.token!));
-        // And keep moving...
+        // Skip the current token and continue...
         next();
-      } else {
-        result.push(item);
       }
     }
 
-    return result;
+    return collected;
   }
 
   /**
-   * Reads a list of items with a separator.
+   * Creates a new function that matches a specific grammar.
    *
-   * @param cb Callback that matches the data.
-   * @param sep The function that matches the list separator.
-   * @param end Called when item was not matched and indicates if we should
-   *  continue moving forward or return the collected items.
+   * @param factory The function that constructs the new AST Node.
+   * @param matchers List of matcher callbacks.
    */
-  function readArraySep<T>(
-    cb: () => T | false,
-    sep: () => unknown,
-    end?: () => boolean
-  ): T[] {
-    const result: T[] = [];
-
-    while (!eof()) {
-      while (current.token && current.token.kind === Scanner.TokenKind.NEW_LINE)
-        current = current.next;
-
-      ignoreErrors = true;
-      const item = cb();
-      ignoreErrors = false;
-
-      if (!item) {
-        // For example in an array we can always check for `]` to see if we
-        // are at the end of the list.
-        if (end && end()) break;
-
-        if (sep()) {
-          // Imagine if we want to collect a list of numbers.
-          // And we have `1, 2, 3` as a valid list this state (where we are)
-          // happens with a thing like this: `1,, 2`. You see there is one blank
-          // element. then there is a separator and that's something that
-          // happens a lot of times... It's a error but we can keep moving forward.
-          reportError(
-            new Errors.ExtraListSeparator(
-              current.prev
-                ? current.prev.token!.position
-                : current.token!.position
-            )
-          );
-          // Don't exit, just keep finding other elements.
-          continue;
-        } else {
-          // This is a trailing separator error.
-          reportError(
-            new Errors.TrailingListSeparator(
-              current.token!.position.add(current.token!.length)
-            )
-          );
-          break;
-        }
-      } else {
-        result.push(item);
-      }
-
-      // Well, In real world this happens a lot when we miss the list separator.
-      // So keep moving forward... but report an error.
-      // Example: `1, 2, 3 4`
-      if (!(eof() && sep())) {
-        reportError(new Errors.MissedListSeparator(current.token!.position));
-      }
-    }
-
-    return result;
-  }
-
-  function $keyword(keyword: string) {
-    const { token } = current;
-    return (
-      token &&
-      token.kind === Scanner.TokenKind.IDENTIFIER &&
-      token.name === keyword
-    );
-  }
-
-  function $identifer(): AST.Identifier | null {
-    const { token } = current;
-    if (!token || token.kind !== Scanner.TokenKind.IDENTIFIER) return null;
-    if (token.keyword) return null;
-    return new AST.Identifier(
-      {
-        start: token.position,
-        end: token.position.add(token.length)
-      },
-      token.name
-    );
-  }
-
-  function $punctuation(punctuation: string): boolean {
-    const { token } = current;
-    return !!(
-      token &&
-      token.kind === Scanner.TokenKind.PUNCTUATION &&
-      token.punctuation === punctuation
-    );
-  }
-
-  type WriteContext<T extends AST.Node> = {
-    -readonly [key in keyof T]: T[key] | null | false;
-  };
-
-  type ReadyContext<T extends AST.Node> = {
-    -readonly [key in keyof T]: T[key];
-  };
-
   function createPattern<T extends AST.Node>(
-    factory: (c: ReadyContext<T>) => T,
-    words: string[],
-    ...units: ((c: WriteContext<T>) => any)[]
-  ): () => T | false {
-    if (words.length !== units.length) throw new Error();
-    const last = units.length - 1;
-
+    factory: (context: T) => T,
+    ...matchers: ((context: WritableContext<T>) => AST.Node | False | true)[]
+  ): () => T | null {
     return () => {
-      const context: WriteContext<T> = {} as any;
-      if (!units[0](context)) return false;
-      const start = currentPosition();
-
+      const context: WritableContext<T> = {} as any;
+      const start = current.token;
+      let entity: Scanner.TokenListEntity;
+      // Store the current token so if we don't match the data
+      // we can just set it back to here.
       store();
-      next();
+      // Start a new error frame.
+      addErrorFrame();
 
-      for (let i = 1; i < units.length; ++i) {
-        if (!units[i](context)) {
-          reportError(new Errors.ExpectedToken(currentPosition(), words[i]));
-
-          if (i < 3) {
-            restore();
-            return false;
-          }
+      for (let i = 0; i < matchers.length; ++i) {
+        // TODO(qti3e) Fuzzy-match.
+        entity = current;
+        if (!eof() && matchers[i](context)) {
+          // If the matcher did not changed the current token.
+          // we do it here.
+          if (entity === current) next();
+        } else {
+          // Undo the changes to the cursor.
+          restore();
+          // Ignore all the errors in the current error frame.
+          popErrorFrame(false);
+          return null;
         }
-
-        if (i < last) next();
       }
 
-      const lastToken = current.token!;
+      const lastToken = entity!.token!;
       context.location = {
-        start,
+        start: start!.position,
         end: lastToken.position.add(lastToken.length)
       };
 
-      return factory(context as ReadyContext<T>);
+      // Publish all the errors in the current error frame.
+      popErrorFrame(true);
+      return factory(context as T);
     };
   }
 
-  // ===== LANGUAGE SPECIFIC FUNCTIONS ======
+  // !-------------------------- Start of Ema's actual grammar.
 
-  const functionDeclaration = createPattern<AST.FunctionDeclaration>(
-    $ => new AST.FunctionDeclaration($.location, $.name, $.parameters, []),
-    ["func", "identifier", "(", "parameter list", ")"],
-    _ => $keyword("func"),
-    _ => (_.name = $identifer()),
-    _ => $punctuation("("),
-    _ =>
-      (_.parameters = readArraySep(
-        () => parameter(),
-        () => $punctuation(","),
-        () => $punctuation(")")
-      )),
-    _ => $punctuation(")")
+  const declaration = createPattern<AST.FunctionDeclaration>(
+    $ => new AST.FunctionDeclaration($.location, $.name, [], []),
+    _ => current.isKeyword("func"),
+    _ => (_.name = current.asIdentifer())
   );
-
-  const parameter = createPattern<AST.Parameter>(
-    $ => new AST.Parameter($.location, $.name, $.type),
-    ["type", "identifier"],
-    _ => (_.type = $identifer()),
-    _ => (_.name = $identifer())
-  );
-
-  function declaration(): AST.Declaration | false {
-    return functionDeclaration();
-  }
 }

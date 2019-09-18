@@ -3,7 +3,12 @@ const Q = require("./build/q");
 class Handler extends Q.System.IOHandlerBase {
   async read() {
     return `
-    func x(a bcd,, c d)
+    func a
+
+    func b
+
+
+    func c
     `;
   }
 }

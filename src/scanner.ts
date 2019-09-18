@@ -184,6 +184,11 @@ namespace Q.Scanner {
   };
 
   /**
+   * List of keywords.
+   */
+  export const keywords: ReadonlySet<string> = new Set<string>(["func"]);
+
+  /**
    * An implementation for a token stream.
    */
   export class TokenStream {
@@ -323,12 +328,14 @@ namespace Q.Scanner {
 
       if (/[a-zA-Z\$_]/.test(ch0)) {
         const name = this.regExp(/^[a-zA-Z\$_][a-zA-Z0-9_\-]*/);
-        return {
+        const token: IdentifierToken = {
           kind: TokenKind.IDENTIFIER,
           name,
           position: new Source.Position(this.source, start),
           length: name.length
         };
+        if (keywords.has(name)) token.keyword = true;
+        return token;
       }
 
       if (ch0 === '"' || ch0 === "'") {
@@ -508,7 +515,53 @@ namespace Q.Scanner {
       if (this.nextCache) return this.nextCache;
       const token = this.stream.next();
       const entity = new TokenListEntity(this.stream, this, token);
-      return entity;
+      return (this.nextCache = entity);
+    }
+
+    /**
+     * Returns whatever the current token is a specific token or not.
+     *
+     * @param name The keyword name.
+     */
+    isKeyword(name: string): boolean {
+      const { token } = this;
+      return !!(
+        token &&
+        token.kind === TokenKind.IDENTIFIER &&
+        token.keyword &&
+        token.name === name
+      );
+    }
+
+    /**
+     * Returns whatever the current token is a specific punctuation or not.
+     *
+     * @param punctuation The punctuation.
+     */
+    isPunctuation(punctuation: string): boolean {
+      const { token } = this;
+      return !!(
+        token &&
+        token.kind === TokenKind.PUNCTUATION &&
+        token.punctuation === punctuation
+      );
+    }
+
+    /**
+     * Returns a new AST Identifier from the current token if it's a identifier
+     * otherwise returns null.
+     */
+    asIdentifer(): AST.Identifier | null {
+      const { token } = this;
+      return token && token.kind === TokenKind.IDENTIFIER && !token.keyword
+        ? new AST.Identifier(
+            {
+              start: token.position,
+              end: token.position.add(token.length)
+            },
+            token.name
+          )
+        : null;
     }
   }
 

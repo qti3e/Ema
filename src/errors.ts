@@ -63,9 +63,14 @@ namespace Q.Errors {
     readonly code = 1007;
     readonly message: string;
 
-    constructor(position: Source.Position, readonly expected: string) {
+    constructor(
+      position: Source.Position,
+      readonly expected: string,
+      readonly actual: Scanner.Token
+    ) {
       super(position);
-      this.message = `Expected "${expected}" but found something else.`;
+      const name = Scanner.TokenKind[actual.kind];
+      this.message = `Expected "${expected}" but found "${name}".`;
     }
   }
 }
