@@ -73,4 +73,13 @@ namespace Q.Errors {
       this.message = `Expected "${expected}" but found "${name}".`;
     }
   }
+
+  export class UnexpectedEOF extends ParseError {
+    readonly code = 1008;
+    readonly message = "Unexpected end of file.";
+
+    constructor(position: Source.Position) {
+      super(position);
+    }
+  }
 }

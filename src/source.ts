@@ -128,6 +128,14 @@ namespace Q.Source {
 
       return [index, position - map[map.length - 1] + 1];
     }
+
+    /**
+     * Returns the EOF position.
+     */
+    getEOF(): Position {
+      const { length } = this.getContentSync();
+      return new Position(this, length);
+    }
   }
 
   /**
@@ -193,7 +201,7 @@ namespace Q.Source {
 
     /**
      * Adds the given number to the current position returning a new one.
-     * 
+     *
      * @param count The number to be added to the current position.
      */
     add(count: number) {

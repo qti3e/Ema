@@ -5,7 +5,7 @@ class Handler extends Q.System.IOHandlerBase {
     return `
     func a
 
-    func b
+    func 5
 
 
     func c

@@ -156,31 +156,51 @@ namespace Q.Parser {
    */
   function createPattern<T extends AST.Node>(
     factory: (context: T) => T,
+    names: string[],
     ...matchers: ((context: WritableContext<T>) => AST.Node | False | true)[]
   ): () => T | null {
-    return () => {
+    if (names.length !== matchers.length) throw new Error();
+
+    const many = (matchers.length / 2) | 0;
+
+    const matcher = (): T | null => {
       const context: WritableContext<T> = {} as any;
       const start = current.token;
       let entity: Scanner.TokenListEntity;
-      // Store the current token so if we don't match the data
-      // we can just set it back to here.
-      store();
-      // Start a new error frame.
-      addErrorFrame();
 
-      for (let i = 0; i < matchers.length; ++i) {
-        // TODO(qti3e) Fuzzy-match.
+      // Do the first case outside of the loop.
+      entity = current;
+      if (eof() || !matchers[0](context)) return null;
+      if (entity === current) next();
+
+      for (let i = 1; i < matchers.length; ++i) {
+        if (eof()) {
+          if (i < many) return null;
+          reportError(new Errors.UnexpectedEOF(currentSource.getEOF()));
+          break;
+        }
+
         entity = current;
-        if (!eof() && matchers[i](context)) {
+
+        if (matchers[i](context)) {
           // If the matcher did not changed the current token.
           // we do it here.
           if (entity === current) next();
         } else {
-          // Undo the changes to the cursor.
-          restore();
-          // Ignore all the errors in the current error frame.
-          popErrorFrame(false);
-          return null;
+          // Just in case.
+          current = entity;
+          // If we've already matched a lot of things just ignore the current
+          // grammar unit (a.k.a matcher).
+          if (i < many) return null;
+          reportError(
+            new Errors.ExpectedToken(
+              current.token!.position,
+              names[i],
+              current.token!
+            )
+          );
+          if (entity === current) next();
+          continue;
         }
       }
 
@@ -190,9 +210,20 @@ namespace Q.Parser {
         end: lastToken.position.add(lastToken.length)
       };
 
-      // Publish all the errors in the current error frame.
-      popErrorFrame(true);
       return factory(context as T);
+    };
+
+    return () => {
+      // Store the current token so if we don't match the data
+      // we can just set it back to here.
+      store();
+      // Start a new error frame.
+      addErrorFrame();
+      const value = matcher();
+      // Undo the changes to the cursor.
+      if (value === null) restore();
+      popErrorFrame(value !== null);
+      return value;
     };
   }
 
@@ -200,6 +231,7 @@ namespace Q.Parser {
 
   const declaration = createPattern<AST.FunctionDeclaration>(
     $ => new AST.FunctionDeclaration($.location, $.name, [], []),
+    ["func", "identifier"],
     _ => current.isKeyword("func"),
     _ => (_.name = current.asIdentifer())
   );

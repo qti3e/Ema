@@ -547,6 +547,11 @@ namespace Q.Scanner {
       );
     }
 
+    isNewLine(): boolean {
+      const { token } = this;
+      return !!(token && token.kind === TokenKind.NEW_LINE);
+    }
+
     /**
      * Returns a new AST Identifier from the current token if it's a identifier
      * otherwise returns null.
