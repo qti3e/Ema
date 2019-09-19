@@ -5,10 +5,14 @@ class Handler extends Q.System.IOHandlerBase {
     return `
     func a
 
-    func 5
+    4 x
 
 
     func c
+
+    func 5
+
+    func s
     `;
   }
 }

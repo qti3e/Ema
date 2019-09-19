@@ -167,31 +167,21 @@ namespace Q.Parser {
       const context: WritableContext<T> = {} as any;
       const start = current.token;
       let entity: Scanner.TokenListEntity;
+      let counter = 0;
 
-      // Do the first case outside of the loop.
-      entity = current;
-      if (eof() || !matchers[0](context)) return null;
-      if (entity === current) next();
-
-      for (let i = 1; i < matchers.length; ++i) {
+      for (let i = 0; i < matchers.length; ++i) {
         if (eof()) {
-          if (i < many) return null;
+          if (i === 0 || counter < many) return null;
           reportError(new Errors.UnexpectedEOF(currentSource.getEOF()));
           break;
         }
 
+        const ret = matchers[i](context);
         entity = current;
-
-        if (matchers[i](context)) {
-          // If the matcher did not changed the current token.
-          // we do it here.
-          if (entity === current) next();
+        if (ret) {
+          ++counter;
         } else {
-          // Just in case.
           current = entity;
-          // If we've already matched a lot of things just ignore the current
-          // grammar unit (a.k.a matcher).
-          if (i < many) return null;
           reportError(
             new Errors.ExpectedToken(
               current.token!.position,
@@ -199,10 +189,13 @@ namespace Q.Parser {
               current.token!
             )
           );
-          if (entity === current) next();
-          continue;
         }
+        if (entity === current && !(Array.isArray(ret) && ret.length === 0))
+          next();
+        else if (!ret && i === matchers.length - 1) next();
       }
+
+      if (counter < many) return null;
 
       const lastToken = entity!.token!;
       context.location = {
