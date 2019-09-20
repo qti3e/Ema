@@ -123,7 +123,7 @@ namespace Q.Source {
           }
           index += step;
         }
-        step = Math.floor(step / 2);
+        step = Math.ceil(step / 2);
       }
 
       return [index, position - map[map.length - 1] + 1];

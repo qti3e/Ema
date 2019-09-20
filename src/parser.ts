@@ -149,6 +149,68 @@ namespace Q.Parser {
   }
 
   /**
+   * Matches an array of elements which has a separator between each element.
+   *
+   * @param matcher The callback used to match values.
+   * @param isSep The callback function used to check if the current token is a
+   *  separator.
+   * @param isEnd Check if the current token can be the final state.
+   */
+  function readArraySep<T>(
+    matcher: () => T | False,
+    isSep: (token: Scanner.TokenListEntity) => boolean,
+    isEnd?: (token: Scanner.TokenListEntity) => boolean
+  ): T[] {
+    const collected: T[] = [];
+    const end = () => (isEnd ? eof() || isEnd(current) : eof());
+    let hasSep = false;
+    let lastSepToken: Scanner.TokenListEntity;
+    let lastToken: Scanner.Token;
+    let lastPushed = false;
+
+    while (!end()) {
+      const tmp = current;
+      const value = matcher();
+
+      if (value && !hasSep && lastPushed) {
+        reportError(
+          new Errors.MissedListSeparator(
+            lastToken!.position.add(lastToken!.length)
+          )
+        );
+      }
+
+      lastPushed = false;
+      lastToken = tmp.token!;
+
+      hasSep = value
+        ? !end() && isSep((lastSepToken = current))
+        : isSep((lastSepToken = current));
+      hasSep && next();
+
+      if (value) {
+        collected.push(value);
+        lastPushed = true;
+      } else if (hasSep) {
+        reportError(
+          new Errors.ExtraListSeparator(lastSepToken!.token!.position)
+        );
+      } else {
+        reportError(new Errors.UnexpectedToken(current.token!));
+        next();
+      }
+    }
+
+    if (hasSep) {
+      reportError(
+        new Errors.TrailingListSeparator(lastSepToken!.token!.position)
+      );
+    }
+
+    return collected;
+  }
+
+  /**
    * Creates a new function that matches a specific grammar.
    *
    * @param factory The function that constructs the new AST Node.
@@ -157,11 +219,13 @@ namespace Q.Parser {
   function createPattern<T extends AST.Node>(
     factory: (context: T) => T,
     names: string[],
-    ...matchers: ((context: WritableContext<T>) => AST.Node | False | true)[]
+    ...matchers: ((
+      context: WritableContext<T>
+    ) => AST.Node | AST.Node[] | False | true)[]
   ): () => T | null {
     if (names.length !== matchers.length) throw new Error();
 
-    const many = (matchers.length / 2) | 0;
+    const many = Math.max((matchers.length / 2) | 0, 1);
 
     const matcher = (): T | null => {
       const context: WritableContext<T> = {} as any;
@@ -176,8 +240,8 @@ namespace Q.Parser {
           break;
         }
 
-        const ret = matchers[i](context);
         entity = current;
+        const ret = matchers[i](context);
         if (ret) {
           ++counter;
         } else {
@@ -223,9 +287,23 @@ namespace Q.Parser {
   // !-------------------------- Start of Ema's actual grammar.
 
   const declaration = createPattern<AST.FunctionDeclaration>(
-    $ => new AST.FunctionDeclaration($.location, $.name, [], []),
-    ["func", "identifier"],
+    $ => new AST.FunctionDeclaration($.location, $.name, $.parameters, []),
+    ["func", "identifier", "(", "parameters", ")"],
     _ => current.isKeyword("func"),
+    _ => (_.name = current.asIdentifer()),
+    _ => current.isPunctuation("("),
+    _ =>
+      (_.parameters = readArraySep(
+        () => parameter(),
+        $ => $.isPunctuation(","),
+        $ => $.isPunctuation(")")
+      )),
+    _ => current.isPunctuation(")")
+  );
+
+  const parameter = createPattern<AST.Parameter>(
+    $ => new AST.Parameter($.location, $.name, $.type),
+    ["identifier"],
     _ => (_.name = current.asIdentifer())
   );
 }
