@@ -20,16 +20,13 @@ Q.System.setIOHandler(new Handler());
 
 async function main() {
   const source = Q.Source.Graph.getFile("./main.js");
-  await source.getContent();
-
-  const result = Q.Parser.parse(source);
+  const result = await source.parse(source);
 
   for (const err of source.getParseErrors()) {
     console.log(err.toString());
   }
 
   console.log(result);
-
   debugger;
 }
 

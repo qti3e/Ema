@@ -1,0 +1,15 @@
+{
+  "compilerOptions": {
+    "module": "commonjs",
+    "target": "esnext",
+    "outDir": "../build",
+    "sourceMap": true,
+    "inlineSourceMap": false,
+    "stripInternal": true,
+    "strict": true,
+    "declaration": true,
+    "esModuleInterop": true,
+    "lib": ["dom", "es7", "es2017", "es2017.object", "esnext"],
+  },
+  "include": ["**/*.ts"]
+}

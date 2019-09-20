@@ -5,11 +5,14 @@
   "author": "Parsa Ghadimi <me@qti3e.com>",
   "license": "MIT",
   "devDependencies": {
+    "liltest": "^0.0.5",
     "ts-node": "^8.4.1",
     "tslib": "^1.10.0",
     "typescript": "^3.6.3"
   },
   "scripts": {
-    "build-cjs": "tsc && echo 'export = Q;' >> ./build/q.d.ts"
+    "build-cjs": "tsc && echo 'export = Q;' >> ./build/q.d.ts",
+    "build-test": "cd test && tsc",
+    "test": "npm run build-cjs && npm run build-test && node build/test"
   }
 }

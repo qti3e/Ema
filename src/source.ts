@@ -24,6 +24,53 @@ namespace Q.Source {
     private lineLengthMapCache: number[] | undefined;
 
     /**
+     * Cache of `.parse()`.
+     */
+    private ast: AST.Source | undefined;
+
+    /**
+     * The last token list used for the current file.
+     */
+    private tokenList: Scanner.TokenListEntityBase | undefined;
+
+    /**
+     * Invalidate the cache.
+     */
+    resetCache() {
+      this.lineLengthMapCache = undefined;
+      this.linesCache = undefined;
+      this.contentCache = undefined;
+      this.ast = undefined;
+    }
+
+    /**
+     * Apply an edit to the current content.
+     *
+     * @param start Start position.
+     * @param end End position.
+     * @param text The new text to be put in the given area.
+     */
+    edit(start: number, end: number, text: string): void {
+      const content = this.contentCache!;
+      this.resetCache();
+      const before = content.slice(0, start);
+      const after = content.slice(end);
+      this.contentCache = before + text + after;
+      // TODO(qti3e)
+    }
+
+    /**
+     * Parse the current file.
+     */
+    async parse(): Promise<AST.Source> {
+      if (this.ast) return this.ast;
+      await this.getContent();
+      const stream = new Scanner.TokenStream(this);
+      this.tokenList = Scanner.toStaticLinkedList(stream);
+      return (this.ast = Parser.parse(this.tokenList));
+    }
+
+    /**
      * Add a new parse error to this source file.
      *
      * @param error The parse error which you want to report.
@@ -255,5 +302,12 @@ namespace Q.Source.Graph {
    */
   export function getFiles(): File[] {
     return Array.from(fileMap.values());
+  }
+
+  /**
+   * Reset the source graph.
+   */
+  export function reset(): void {
+
   }
 }

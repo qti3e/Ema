@@ -482,41 +482,69 @@ namespace Q.Scanner {
     eof() {
       return this.peek() === null;
     }
+
+    /**
+     * Changes the current cursor to the given one.
+     *
+     * @param cursor The new cursor.
+     */
+    jump(cursor: number) {
+      this.cursor = cursor;
+    }
+
+    /**
+     * Reloads the contents of the current file.
+     */
+    reloadContent() {
+      this.text = this.source.getContentSync();
+    }
+
+    /**
+     * Return all the remaining tokens in an array.
+     */
+    list(): Token[] {
+      const tokens: Token[] = [];
+      while (!this.eof()) tokens.push(this.next()!);
+      return tokens;
+    }
+
+    listUntil(position: number) {
+      const tokens: Token[] = [];
+    }
   }
 
   /**
    * An entity in the doubly linked-list, this list helps us control the
    * navigation between tokens easier.
    */
-  export class TokenListEntity {
-    /**
-     * The list is lazily evaluated from the stream.
-     * This property holds the computed value of the next token.
-     */
-    private nextCache?: TokenListEntity;
-
+  export abstract class TokenListEntityBase {
     /**
      * Constructs a new list entity.
      *
      * @param stream The stream this list is bounded to.
      * @param prev The previous item
-     * @param token The current token in this entity.
      */
     constructor(
-      private readonly stream: TokenStream,
-      readonly prev: TokenListEntity | null,
-      readonly token: Token | null
-    ) {}
+      readonly stream: TokenStream,
+      readonly prev: TokenListEntityBase | null
+    ) {
+      this.source = stream.source;
+    }
 
     /**
-     * Returns the next element.
+     * The current file containing this token.
      */
-    get next(): TokenListEntity {
-      if (this.nextCache) return this.nextCache;
-      const token = this.stream.next();
-      const entity = new TokenListEntity(this.stream, this, token);
-      return (this.nextCache = entity);
-    }
+    readonly source: Source.File;
+
+    /**
+     * The next token.
+     */
+    abstract readonly next: TokenListEntityBase;
+
+    /**
+     * The current token in this entity.
+     */
+    abstract readonly token: Token | null;
 
     /**
      * Returns whatever the current token is a specific token or not.
@@ -547,6 +575,9 @@ namespace Q.Scanner {
       );
     }
 
+    /**
+     * Returns true if the current token is a new-line token.
+     */
     isNewLine(): boolean {
       const { token } = this;
       return !!(token && token.kind === TokenKind.NEW_LINE);
@@ -570,12 +601,146 @@ namespace Q.Scanner {
     }
   }
 
+  export class StreamTokenListEntity extends TokenListEntityBase {
+    /**
+     * The list is lazily evaluated from the stream.
+     * This property holds the computed value of the next token.
+     */
+    private nextCache?: TokenListEntityBase;
+
+    constructor(
+      stream: TokenStream,
+      prev: TokenListEntityBase | null,
+      readonly token: Token | null
+    ) {
+      super(stream, prev);
+    }
+
+    /**
+     * Returns the next element.
+     */
+    get next(): TokenListEntityBase {
+      if (this.nextCache) return this.nextCache;
+      const token = this.stream.next();
+      const entity = new StreamTokenListEntity(this.stream, this, token);
+      return (this.nextCache = entity);
+    }
+  }
+
+  export class StaticTokenListEntity extends TokenListEntityBase {
+    /**
+     * The next element cache.
+     */
+    private nextCache?: StaticTokenListEntity;
+
+    constructor(
+      stream: TokenStream,
+      prev: TokenListEntityBase | null,
+      readonly backend: Token[],
+      readonly index: number
+    ) {
+      super(stream, prev);
+    }
+
+    get next(): StaticTokenListEntity {
+      if (this.nextCache) return this.nextCache;
+      this.nextCache = new StaticTokenListEntity(
+        this.stream,
+        this,
+        this.backend,
+        this.index + 1
+      );
+      return this.nextCache;
+    }
+
+    get token(): Token | null {
+      return this.backend[this.index] || null;
+    }
+  }
+
   /**
    * Constructs a new linked list from a TokenStream.
    *
    * @param stream A TokenStream to be used as the source.
    */
-  export function toLinkedList(stream: TokenStream): TokenListEntity {
-    return new TokenListEntity(stream, null, stream.next());
+  export function toStreamLinkedList(
+    stream: TokenStream
+  ): StreamTokenListEntity {
+    return new StreamTokenListEntity(stream, null, stream.next());
+  }
+
+  /**
+   * Constructs a new static linked list of Tokens.
+   *
+   * @param stream A TokenStream to be used as the source.
+   */
+  export function toStaticLinkedList(
+    stream: TokenStream
+  ): StaticTokenListEntity {
+    return new StaticTokenListEntity(stream, null, stream.list(), 0);
+  }
+
+  export function applyEdit(
+    list: StaticTokenListEntity,
+    startPos: number,
+    endPos: number,
+    newEndPos: number
+  ) {
+    const { backend, stream } = list;
+    const newTokens: Token[] = [];
+    stream.reloadContent();
+    stream.jump(startPos);
+
+    while (!stream.eof()) {
+      const token = stream.next()!;
+      if (token.position.position >= newEndPos) break;
+      newTokens.push(token);
+    }
+
+    const sIndex = findTokenIndexAtPosition(list, startPos);
+    const eIndex = findTokenIndexAtPosition(list, endPos - 1, sIndex);
+    const delCount = eIndex - sIndex + 1;
+
+    backend.splice(sIndex, delCount, ...newTokens);
+
+    let editHead: StaticTokenListEntity = list;
+    while (editHead.index !== sIndex) editHead = editHead.next;
+
+    return {
+      editHead,
+      numInserted: newTokens.length,
+      delCount
+    };
+  }
+
+  export function findTokenIndexAtPosition(
+    list: StaticTokenListEntity,
+    position: number,
+    start: number = 0
+  ): number {
+    const { backend } = list;
+
+    const len = backend.length - start;
+    let index = (start + len / 2) | 0;
+    let step = (len / 4) | 0;
+
+    while (index < backend.length && index >= start) {
+      const token = backend[index];
+      const start = token.position.position;
+
+      if (start > position) {
+        index -= step;
+      } else {
+        if (position < start + token.length) {
+          // start <= position && position < (start + token.length)
+          return index;
+        }
+        index += step;
+      }
+
+      step = (step / 2) | 0 || 1;
+    }
+
+    return -1;
   }
 }

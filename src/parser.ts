@@ -8,16 +8,22 @@ namespace Q.Parser {
    *
    * @param source The source file to parse.
    */
-  export function parse(source: Source.File): AST.Source {
-    currentSource = source;
-    const stream = new Scanner.TokenStream(source);
+  export function parse(tokens: Scanner.TokenListEntityBase): AST.Source {
+    currentSource = tokens.source;
     cursorStack.length = 0;
-    cursorStack.push((current = Scanner.toLinkedList(stream)));
+    cursorStack.push((current = tokens));
     // Skip new lines.
     while (current.token && current.token.kind === Scanner.TokenKind.NEW_LINE)
       current = current.next;
     return readArray(declaration);
   }
+
+  export function applyEdit(
+    source: Source.File,
+    current: AST.Source,
+    start: number,
+    end: number
+  ) {}
 
   /**
    * Every value that means negative in JS.
@@ -34,7 +40,7 @@ namespace Q.Parser {
   /**
    * Store the cursors.
    */
-  const cursorStack: Scanner.TokenListEntity[] = [];
+  const cursorStack: Scanner.TokenListEntityBase[] = [];
 
   /**
    * The current source file passed to parse() function.
@@ -44,7 +50,7 @@ namespace Q.Parser {
   /**
    * The current token list entity.
    */
-  let current: Scanner.TokenListEntity;
+  let current: Scanner.TokenListEntityBase;
 
   /**
    * Yet another stack to store error frames.
@@ -158,21 +164,20 @@ namespace Q.Parser {
    */
   function readArraySep<T>(
     matcher: () => T | False,
-    isSep: (token: Scanner.TokenListEntity) => boolean,
-    isEnd?: (token: Scanner.TokenListEntity) => boolean
+    isSep: (token: Scanner.TokenListEntityBase) => boolean,
+    isEnd?: (token: Scanner.TokenListEntityBase) => boolean
   ): T[] {
     const collected: T[] = [];
     const end = () => (isEnd ? eof() || isEnd(current) : eof());
     let hasSep = false;
-    let lastSepToken: Scanner.TokenListEntity;
-    let lastToken: Scanner.Token;
+    let lastSepToken: Scanner.TokenListEntityBase;
     let lastPushed = false;
 
     while (!end()) {
-      const tmp = current;
       const value = matcher();
 
       if (value && !hasSep && lastPushed) {
+        const lastToken = current.prev!.token;
         reportError(
           new Errors.MissedListSeparator(
             lastToken!.position.add(lastToken!.length)
@@ -181,7 +186,6 @@ namespace Q.Parser {
       }
 
       lastPushed = false;
-      lastToken = tmp.token!;
 
       hasSep = value
         ? !end() && isSep((lastSepToken = current))
@@ -230,7 +234,7 @@ namespace Q.Parser {
     const matcher = (): T | null => {
       const context: WritableContext<T> = {} as any;
       const start = current.token;
-      let entity: Scanner.TokenListEntity;
+      let entity: Scanner.TokenListEntityBase;
       let counter = 0;
 
       for (let i = 0; i < matchers.length; ++i) {
@@ -294,7 +298,7 @@ namespace Q.Parser {
     _ => current.isPunctuation("("),
     _ =>
       (_.parameters = readArraySep(
-        () => parameter(),
+        parameter,
         $ => $.isPunctuation(","),
         $ => $.isPunctuation(")")
       )),

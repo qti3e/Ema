@@ -32,12 +32,19 @@ namespace Q.System {
     });
   }
 
+  /**
+   * Reset the IOHandler.
+   */
+  export function resetIOHandler() {
+    Object.defineProperty(Q.System, "IOHandler", {
+      get() {
+        throw new Error("Current IO handler is not registered yet.");
+      },
+      configurable: true,
+      enumerable: true
+    });
+  }
+
   // Set the default value for IOHandler - it only throws an error.
-  Object.defineProperty(Q.System, "IOHandler", {
-    get() {
-      throw new Error("Current IO handler is not registered yet.");
-    },
-    configurable: true,
-    enumerable: true
-  });
+  resetIOHandler();
 }
