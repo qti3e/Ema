@@ -52,10 +52,10 @@ namespace Q.Source {
       const before = content.slice(0, start);
       const after = content.slice(end);
       this.contentCache = before + text + after;
-      if (!parseInfo) return;
-      const newEnd = end + (text.length - (end - start));
-      const editInfo = Scanner.applyEdit(this.tokenList!, start, end, newEnd);
-      Parser.applyEdit(this, editInfo, parseInfo);
+      // TODO(qti3e)
+      // if (!parseInfo) return;
+      // const newEnd = end + (text.length - (end - start));
+      // const editInfo = Scanner.applyEdit(this.tokenList!, start, end, newEnd);
     }
 
     /**
@@ -156,8 +156,8 @@ namespace Q.Source {
       }
 
       const map = this.lineLengthMapCache!;
-      let index = Math.floor(map.length / 2);
-      let step = Math.ceil(map.length / 4);
+      let index = (map.length / 2) | 0;
+      let step = (map.length / 4) | 0;
 
       while (index < map.length) {
         if (map[index] > position) {
@@ -168,7 +168,7 @@ namespace Q.Source {
           }
           index += step;
         }
-        step = Math.ceil(step / 2);
+        step = (step / 2) | 0 || 1;
       }
 
       return [index, position - map[map.length - 1] + 1];

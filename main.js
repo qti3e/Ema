@@ -3,9 +3,7 @@ const Q = require("./build/q");
 async function main() {
   Q.Utils.SetSingleFileHandler(
     `
-funcx a(X)
-
-func b(X, Y)
+func a(X.Y X)
 `.trim()
   );
 

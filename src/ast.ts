@@ -24,7 +24,7 @@ namespace Q.AST {
   export class ExpressionStatement extends Node {
     readonly location: Source.Location;
 
-    constructor(readonly expression: Expression) {
+    constructor(public expression: Expression) {
       super();
       this.location = expression.location;
     }
@@ -37,9 +37,9 @@ namespace Q.AST {
   export class FunctionDeclaration extends Node {
     constructor(
       readonly location: Source.Location,
-      readonly name: Identifier,
-      readonly parameters: Parameter[],
-      readonly body: Statement[]
+      public name: Identifier,
+      public parameters: Parameter[],
+      public body: Statement[]
     ) {
       super();
     }
@@ -52,8 +52,8 @@ namespace Q.AST {
   export class Parameter extends Node {
     constructor(
       readonly location: Source.Location,
-      readonly name: Identifier,
-      readonly type: TypeRef
+      public name: Identifier,
+      public type: TypeRef
     ) {
       super();
     }
@@ -64,7 +64,7 @@ namespace Q.AST {
   }
 
   export class NumericLiteral extends Node {
-    constructor(readonly location: Source.Location, readonly value: number) {
+    constructor(readonly location: Source.Location, public value: number) {
       super();
     }
 
@@ -74,7 +74,7 @@ namespace Q.AST {
   }
 
   export class Identifier extends Node {
-    constructor(readonly location: Source.Location, readonly name: string) {
+    constructor(readonly location: Source.Location, public name: string) {
       super();
     }
 
@@ -88,9 +88,9 @@ namespace Q.AST {
   export class BinaryOperation extends Node {
     constructor(
       readonly location: Source.Location,
-      readonly operator: BinaryOperator,
-      readonly lhs: Identifier,
-      readonly rhs: Identifier
+      public operator: BinaryOperator,
+      public lhs: Identifier,
+      public rhs: Identifier
     ) {
       super();
     }
@@ -102,9 +102,9 @@ namespace Q.AST {
 
   export class MemberAccess extends Node {
     constructor(
-      readonly location: Source.Location,
-      readonly base: MemberAccess | Identifier,
-      readonly member: Identifier
+      public location: Source.Location,
+      public base: MemberAccess | Identifier,
+      public member: Identifier
     ) {
       super();
     }

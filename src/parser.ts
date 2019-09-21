@@ -11,11 +11,6 @@ namespace Q.Parser {
      * The root node of the AST.
      */
     AST: AST.Source;
-
-    /**
-     * List of all the nodes in order.
-     */
-    nodes: AST.Node[];
   }
 
   /**
@@ -27,70 +22,13 @@ namespace Q.Parser {
     currentSource = tokens.source;
     cursorStack.length = 0;
     cursorStack.push((current = tokens));
-    constructedNodes.length = 0;
     // Skip new lines.
     while (current.token && current.token.kind === Scanner.TokenKind.NEW_LINE)
       current = current.next;
     // Generate the AST.
-    const AST = readArray(Grammar.declaration);
-    return { AST, nodes: constructedNodes.slice() };
-  }
-
-  export function applyEdit(
-    source: Source.File,
-    info: Scanner.EditInfo,
-    parserInfo: ParsedInfo
-  ) {
-    currentSource = source;
-    cursorStack.length = 0;
-    constructedNodes.length = 0;
-
-    const { nodes } = parserInfo;
-
-    if (info.numInserted === 1 && info.delCount === 1) {
-      const token = info.removedTokens[0];
-      const node = findContainingNode(nodes, token.position);
-      if (!node) return;
-      const data = nodesMap.get(node)!;
-      current = data.token;
-      const newNode = data.fn();
-      Object.assign(node, newNode);
-      return;
-    }
-  }
-
-  function findContainingNode(
-    nodes: AST.Node[],
-    position: Source.Position
-  ): AST.Node | null {
-    if (nodes.length === 0) return null;
-    const pos = position.position;
-
-    let index = (nodes.length / 2) | 0;
-    let step = (nodes.length / 4) | 0 || 1;
-
-    while (index < nodes.length) {
-      const node = nodes[index];
-      const { start, end } = node.location;
-      if (start.position > pos) {
-        index -= step;
-      } else {
-        if (end.position > pos) {
-          while (true) {
-            const node = nodes[index - 1];
-            const { start, end } = node.location;
-            if (start.position > pos || end.position <= pos) break;
-            index--;
-          }
-          return nodes[index];
-        }
-        index += step;
-      }
-
-      step = (step / 2) | 0 || 1;
-    }
-
-    return null;
+    addErrorFrame();
+    const AST = Grammar.source();
+    return { AST };
   }
 
   /**
@@ -104,48 +42,6 @@ namespace Q.Parser {
   type WritableContext<T extends AST.Node> = {
     -readonly [key in keyof T]: T[key] | null;
   };
-
-  /**
-   * The info which can be used to constructs a Node.
-   */
-  interface NodeFactoryInfo {
-    /**
-     * The token list head.
-     */
-    token: Scanner.TokenListEntityBase;
-
-    /**
-     * The match function.
-     */
-    fn: () => AST.Node | False;
-
-    /**
-     * The info about the array containing this Node.
-     */
-    array?: {
-      /**
-       * The containing array.
-       */
-      container: AST.Node[];
-
-      /**
-       * The index of this element in the array.
-       */
-      index: number;
-    };
-  }
-
-  /**
-   * Maps all of the nodes we have constructed to their creation info.
-   */
-  const nodesMap: WeakMap<AST.Node, NodeFactoryInfo> = new WeakMap();
-
-  /**
-   * All of the constructed nodes.
-   * TODO(qti3e) This must work like error frames, we might construct
-   * some nodes but that does not mean we're using them.
-   */
-  const constructedNodes: AST.Node[] = [];
 
   /**
    * Store the cursors.
@@ -361,14 +257,6 @@ namespace Q.Parser {
         entity = current;
         const ret = matchers[i](context);
 
-        if (ret instanceof AST.Identifier) {
-          constructedNodes.push(ret);
-          nodesMap.set(ret, {
-            token: entity,
-            fn: () => current.asIdentifer()
-          });
-        }
-
         if (ret instanceof AST.Node) {
           child.push(ret);
         } else if (Array.isArray(ret)) {
@@ -403,8 +291,7 @@ namespace Q.Parser {
       return factory(context as T);
     };
 
-    const fn = () => {
-      const token = current;
+    return () => {
       // Store the current token so if we don't match the data
       // we can just set it back to here.
       store();
@@ -417,16 +304,72 @@ namespace Q.Parser {
         restore();
       } else {
         child.map(node => (node.parent = value));
-        constructedNodes.push(value);
-        nodesMap.set(value, {
-          token,
-          fn
-        });
       }
       popErrorFrame(value);
       return value;
     };
+  }
 
-    return fn;
+  // TODO(qti3e) Clean this monkey-junky typing.
+  export function lrBinary<
+    T extends AST.Node,
+    LHS extends keyof T,
+    RHS extends keyof T,
+    OPERATOR extends Scanner.Token = Scanner.Token
+  >(
+    factory: (
+      loc: Source.Location,
+      lhs: T | T[LHS],
+      rhs: T[RHS],
+      operator: OPERATOR
+    ) => T,
+    head: () => T | (T[LHS] extends AST.Node ? T[LHS] : never) | null,
+    isOp: (token: Scanner.TokenListEntityBase) => boolean,
+    rhs: () => T[RHS] | null
+  ): () => T | (T[LHS] extends AST.Node ? T[LHS] : never) | null {
+    const matcher = ():
+      | T
+      | (T[LHS] extends AST.Node ? T[LHS] : never)
+      | null => {
+      let right: T[RHS] | null;
+      let prev: T | (T[LHS] extends AST.Node ? T[LHS] : never) | null;
+      let op: OPERATOR;
+
+      const e = current;
+      prev = head();
+      if (!prev) return null;
+      if (e === current) next();
+
+      while (!eof()) {
+        if (!current.token || !isOp(current)) break;
+        op = current.token as OPERATOR;
+        next();
+        const e = current;
+        right = rhs();
+        if (!right) break;
+        if (e === current) next();
+        const loc = {
+          start: new Source.Position(currentSource, 0),
+          end: new Source.Position(currentSource, 0)
+        };
+        prev = factory(loc, prev, right, op);
+        console.log(prev);
+      }
+
+      return prev;
+    };
+
+    return () => {
+      // Store the current token so if we don't match the data
+      // we can just set it back to here.
+      store();
+      // Start a new error frame.
+      addErrorFrame();
+      const value = matcher();
+      // Undo the changes to the cursor.
+      if (value === null) restore();
+      popErrorFrame(value);
+      return value;
+    };
   }
 }
