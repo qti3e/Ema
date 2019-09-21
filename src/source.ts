@@ -26,12 +26,12 @@ namespace Q.Source {
     /**
      * Cache of `.parse()`.
      */
-    private ast: AST.Source | undefined;
+    private parseInfo: Parser.ParsedInfo | undefined;
 
     /**
      * The last token list used for the current file.
      */
-    private tokenList: Scanner.TokenListEntityBase | undefined;
+    private tokenList: Scanner.StaticTokenListEntity | undefined;
 
     /**
      * Invalidate the cache.
@@ -40,7 +40,7 @@ namespace Q.Source {
       this.lineLengthMapCache = undefined;
       this.linesCache = undefined;
       this.contentCache = undefined;
-      this.ast = undefined;
+      this.parseInfo = undefined;
     }
 
     /**
@@ -52,22 +52,28 @@ namespace Q.Source {
      */
     edit(start: number, end: number, text: string): void {
       const content = this.contentCache!;
+      const parseInfo = this.parseInfo;
       this.resetCache();
       const before = content.slice(0, start);
       const after = content.slice(end);
       this.contentCache = before + text + after;
-      // TODO(qti3e)
+      if (!parseInfo) return;
+      const newEnd = end + (text.length - (end - start));
+      const editInfo = Scanner.applyEdit(this.tokenList!, start, end, newEnd);
+      Parser.applyEdit(this, editInfo, parseInfo);
     }
 
     /**
      * Parse the current file.
      */
     async parse(): Promise<AST.Source> {
-      if (this.ast) return this.ast;
-      await this.getContent();
-      const stream = new Scanner.TokenStream(this);
-      this.tokenList = Scanner.toStaticLinkedList(stream);
-      return (this.ast = Parser.parse(this.tokenList));
+      if (!this.parseInfo) {
+        await this.getContent();
+        const stream = new Scanner.TokenStream(this);
+        this.tokenList = Scanner.toStaticLinkedList(stream);
+        this.parseInfo = Parser.parse(this.tokenList);
+      }
+      return this.parseInfo.AST;
     }
 
     /**
@@ -308,6 +314,6 @@ namespace Q.Source.Graph {
    * Reset the source graph.
    */
   export function reset(): void {
-
+    fileMap.clear();
   }
 }

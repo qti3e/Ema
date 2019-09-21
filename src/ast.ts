@@ -1,6 +1,7 @@
 namespace Q.AST {
   export abstract class Node {
     abstract readonly location: Source.Location;
+    parent: Node | null = null;
   }
 
   export type Source = Declaration[];

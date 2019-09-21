@@ -4,26 +4,108 @@
  */
 namespace Q.Parser {
   /**
+   * Result of parse()
+   */
+  export interface ParsedInfo {
+    /**
+     * The root node of the AST.
+     */
+    AST: AST.Source;
+
+    /**
+     * List of all the nodes in order.
+     */
+    nodes: AST.Node[];
+  }
+
+  /**
    * Parse a new Source file into an AST Source object and collect parse errors.
    *
    * @param source The source file to parse.
    */
-  export function parse(tokens: Scanner.TokenListEntityBase): AST.Source {
+  export function parse(tokens: Scanner.TokenListEntityBase): ParsedInfo {
     currentSource = tokens.source;
     cursorStack.length = 0;
     cursorStack.push((current = tokens));
+    constructedNodes.length = 0;
     // Skip new lines.
     while (current.token && current.token.kind === Scanner.TokenKind.NEW_LINE)
       current = current.next;
-    return readArray(declaration);
+    // Generate the AST.
+    const AST = readArray(declaration);
+    return { AST, nodes: constructedNodes.slice() };
   }
 
   export function applyEdit(
     source: Source.File,
-    current: AST.Source,
-    start: number,
-    end: number
-  ) {}
+    info: Scanner.EditInfo,
+    parserInfo: ParsedInfo
+  ) {
+    currentSource = source;
+    cursorStack.length = 0;
+    constructedNodes.length = 0;
+
+    const { nodes } = parserInfo;
+
+    if (info.numInserted === 1 && info.delCount === 1) {
+      const token = info.removedTokens[0];
+      const node = findContainingNode(nodes, token.position);
+      if (!node) return;
+      const data = nodesMap.get(node)!;
+      current = data.token;
+      const newNode = data.fn();
+      Object.assign(node, newNode);
+      return;
+    }
+
+    const containerNodes: AST.Node[] = [];
+    let currentToken = info.editHead;
+
+    for (let i = 0; i < info.numInserted; ++i) {
+      console.log("X")
+      const node = findContainingNode(nodes, currentToken.token!.position);
+      console.log("X")
+      containerNodes.push(node!);
+      currentToken = currentToken.next;
+    }
+
+    console.log(containerNodes);
+    console.log(info);
+  }
+
+  function findContainingNode(
+    nodes: AST.Node[],
+    position: Source.Position
+  ): AST.Node | null {
+    if (nodes.length === 0) return null;
+    const pos = position.position;
+
+    let index = (nodes.length / 2) | 0;
+    let step = (nodes.length / 4) | 0 || 1;
+
+    while (index < nodes.length) {
+      const node = nodes[index];
+      const { start, end } = node.location;
+      if (start.position > pos) {
+        index -= step;
+      } else {
+        if (end.position > pos) {
+          while (true) {
+            const node = nodes[index - 1];
+            const { start, end } = node.location;
+            if (start.position > pos || end.position <= pos) break;
+            index--;
+          }
+          return nodes[index];
+        }
+        index += step;
+      }
+
+      step = (step / 2) | 0 || 1;
+    }
+
+    return null;
+  }
 
   /**
    * Every value that means negative in JS.
@@ -36,6 +118,32 @@ namespace Q.Parser {
   type WritableContext<T extends AST.Node> = {
     -readonly [key in keyof T]: T[key] | null;
   };
+
+  /**
+   * The info which can be used to constructs a Node.
+   */
+  interface NodeFactoryInfo {
+    /**
+     * The token list head.
+     */
+    token: Scanner.TokenListEntityBase;
+    /**
+     * The match function.
+     */
+    fn: () => AST.Node | False;
+  }
+
+  /**
+   * Maps all of the nodes we have constructed to their creation info.
+   */
+  const nodesMap: WeakMap<AST.Node, NodeFactoryInfo> = new WeakMap();
+
+  /**
+   * All of the constructed nodes.
+   * TODO(qti3e) This must work like error frames, we might construct
+   * some nodes but that does not mean we're using them.
+   */
+  const constructedNodes: AST.Node[] = [];
 
   /**
    * Store the cursors.
@@ -229,7 +337,7 @@ namespace Q.Parser {
   ): () => T | null {
     if (names.length !== matchers.length) throw new Error();
 
-    const many = Math.max((matchers.length / 2) | 0, 1);
+    const many = (matchers.length / 2) | 0 || 1;
 
     const matcher = (): T | null => {
       const context: WritableContext<T> = {} as any;
@@ -246,6 +354,15 @@ namespace Q.Parser {
 
         entity = current;
         const ret = matchers[i](context);
+
+        if (ret instanceof AST.Identifier) {
+          constructedNodes.push(ret);
+          nodesMap.set(ret, {
+            token: entity,
+            fn: () => current.asIdentifer()
+          });
+        }
+
         if (ret) {
           ++counter;
         } else {
@@ -274,7 +391,8 @@ namespace Q.Parser {
       return factory(context as T);
     };
 
-    return () => {
+    const fn = () => {
+      const token = current;
       // Store the current token so if we don't match the data
       // we can just set it back to here.
       store();
@@ -282,10 +400,20 @@ namespace Q.Parser {
       addErrorFrame();
       const value = matcher();
       // Undo the changes to the cursor.
-      if (value === null) restore();
+      if (value === null) {
+        restore();
+      } else {
+        constructedNodes.push(value);
+        nodesMap.set(value, {
+          token,
+          fn
+        });
+      }
       popErrorFrame(value !== null);
       return value;
     };
+
+    return fn;
   }
 
   // !-------------------------- Start of Ema's actual grammar.

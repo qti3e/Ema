@@ -17,8 +17,8 @@ func b(X, Y)
   const stream = new Q.Scanner.TokenStream(source);
   const tokens = Q.Scanner.toStaticLinkedList(stream);
 
-  source.edit(6, 7, "z");
-  const info = Q.Scanner.applyEdit(tokens, 6, 7, 7);
+  source.edit(5, 6, "z");
+  const info = Q.Scanner.applyEdit(tokens, 5, 6, 6);
 
   assertEqual(info.editHead.asIdentifer()!.name, "z");
   assertEqual(info.numInserted, 1);
@@ -34,8 +34,8 @@ func b(X, Y)
   assertEqual(ast[0].name.name, "z");
   assertEqual(ast[1].name.name, "b");
 
-  source.edit(7, 17, "");
-  const info2 = Q.Scanner.applyEdit(tokens, 7, 17, 7);
+  source.edit(6, 16, "");
+  const info2 = Q.Scanner.applyEdit(tokens, 6, 16, 6);
   assert(info2.editHead.isPunctuation("("));
   assertEqual(info2.numInserted, 0);
   assertEqual(info2.delCount, 6);

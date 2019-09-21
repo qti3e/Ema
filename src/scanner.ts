@@ -680,12 +680,42 @@ namespace Q.Scanner {
     return new StaticTokenListEntity(stream, null, stream.list(), 0);
   }
 
+  /**
+   * Result of applyEdit.
+   */
+  export interface EditInfo {
+    /**
+     * The first modifier/new token.
+     */
+    editHead: StaticTokenListEntity;
+    /**
+     * Removed tokens.
+     */
+    removedTokens: Token[];
+    /**
+     * Number of inserted tokens.
+     */
+    numInserted: number;
+    /**
+     * Number of removed tokens from the prev list.
+     */
+    delCount: number;
+  }
+
+  /**
+   * Apply the given edit to the list.
+   *
+   * @param list The current list.
+   * @param startPos Start range
+   * @param endPos End range in the prev text.
+   * @param newEndPos End position in the updated content.
+   */
   export function applyEdit(
     list: StaticTokenListEntity,
     startPos: number,
     endPos: number,
     newEndPos: number
-  ) {
+  ): EditInfo {
     const { backend, stream } = list;
     const newTokens: Token[] = [];
     stream.reloadContent();
@@ -697,35 +727,46 @@ namespace Q.Scanner {
       newTokens.push(token);
     }
 
-    const sIndex = findTokenIndexAtPosition(list, startPos);
-    const eIndex = findTokenIndexAtPosition(list, endPos - 1, sIndex);
-    const delCount = eIndex - sIndex + 1;
+    const sIndex = findTokenIndexAtPosition(backend, startPos);
+    const eIndex = findTokenIndexAtPosition(backend, endPos - 1, sIndex);
+    const delCount = Math.max(0, eIndex - sIndex + 1);
 
-    backend.splice(sIndex, delCount, ...newTokens);
+    const removedTokens = backend.splice(sIndex, delCount, ...newTokens);
+
+    const cursorChange = newEndPos - endPos;
+    if (cursorChange !== 0)
+      for (let i = sIndex + newTokens.length; i < backend.length; ++i)
+        backend[i].position = backend[i].position.add(cursorChange);
 
     let editHead: StaticTokenListEntity = list;
     while (editHead.index !== sIndex) editHead = editHead.next;
 
     return {
       editHead,
+      removedTokens,
       numInserted: newTokens.length,
       delCount
     };
   }
 
+  /**
+   * Find the token in the given position in a sorted array of tokens.
+   *
+   * @param list The list containing the token.
+   * @param position The position we hope a token contains.
+   * @param start If you want to start the search after a point.
+   */
   export function findTokenIndexAtPosition(
-    list: StaticTokenListEntity,
+    list: Token[],
     position: number,
     start: number = 0
   ): number {
-    const { backend } = list;
-
-    const len = backend.length - start;
+    const len = list.length - start;
     let index = (start + len / 2) | 0;
-    let step = (len / 4) | 0;
+    let step = (len / 4) | 0 || 1;
 
-    while (index < backend.length && index >= start) {
-      const token = backend[index];
+    while (index < list.length && index >= start) {
+      const token = list[index];
       const start = token.position.position;
 
       if (start > position) {
