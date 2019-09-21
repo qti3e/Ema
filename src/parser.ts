@@ -32,7 +32,7 @@ namespace Q.Parser {
     while (current.token && current.token.kind === Scanner.TokenKind.NEW_LINE)
       current = current.next;
     // Generate the AST.
-    const AST = readArray(declaration);
+    const AST = readArray(Grammar.declaration);
     return { AST, nodes: constructedNodes.slice() };
   }
 
@@ -160,7 +160,7 @@ namespace Q.Parser {
   /**
    * The current token list entity.
    */
-  let current: Scanner.TokenListEntityBase;
+  export let current: Scanner.TokenListEntityBase;
 
   /**
    * Yet another stack to store error frames.
@@ -208,18 +208,18 @@ namespace Q.Parser {
    *
    * @param errors List of parse errors.
    */
-  function reportError(...errors: Errors.ParseError[]) {
+  export function reportError(...errors: Errors.ParseError[]) {
     if (errorFrames.length) {
       errorFrames[errorFrames.length - 1].push(...errors);
     } else {
-      throw new Error()
+      throw new Error();
     }
   }
 
   /**
    * Adds a new error frame.
    */
-  function addErrorFrame() {
+  export function addErrorFrame() {
     errorFrames.push([]);
   }
 
@@ -229,7 +229,7 @@ namespace Q.Parser {
    *
    * @param report Whatever to report the collected errors or ignore them.
    */
-  function popErrorFrame(node: AST.Node | null) {
+  export function popErrorFrame(node: AST.Node | null) {
     const errors = errorFrames.pop();
     if (!errors) throw new Error("");
     if (!node) return;
@@ -245,7 +245,10 @@ namespace Q.Parser {
    * @param end Optional callback to check if we can give up on the search or
    *  not at the current position.
    */
-  function readArray<T>(matcher: () => T | False, end?: () => boolean): T[] {
+  export function readArray<T>(
+    matcher: () => T | False,
+    end?: () => boolean
+  ): T[] {
     const collected: T[] = [];
 
     while (!eof()) {
@@ -273,7 +276,7 @@ namespace Q.Parser {
    *  separator.
    * @param isEnd Check if the current token can be the final state.
    */
-  function readArraySep<T>(
+  export function readArraySep<T>(
     matcher: () => T | False,
     isSep: (token: Scanner.TokenListEntityBase) => boolean,
     isEnd?: (token: Scanner.TokenListEntityBase) => boolean
@@ -331,7 +334,7 @@ namespace Q.Parser {
    * @param factory The function that constructs the new AST Node.
    * @param matchers List of matcher callbacks.
    */
-  function createPattern<T extends AST.Node>(
+  export function createPattern<T extends AST.Node>(
     factory: (context: T) => T,
     names: string[],
     ...matchers: ((
@@ -426,27 +429,4 @@ namespace Q.Parser {
 
     return fn;
   }
-
-  // !-------------------------- Start of Ema's actual grammar.
-
-  const declaration = createPattern<AST.FunctionDeclaration>(
-    $ => new AST.FunctionDeclaration($.location, $.name, $.parameters, []),
-    ["func", "identifier", "(", "parameters", ")"],
-    _ => current.isKeyword("func"),
-    _ => (_.name = current.asIdentifer()),
-    _ => current.isPunctuation("("),
-    _ =>
-      (_.parameters = readArraySep(
-        parameter,
-        $ => $.isPunctuation(","),
-        $ => $.isPunctuation(")")
-      )),
-    _ => current.isPunctuation(")")
-  );
-
-  const parameter = createPattern<AST.Parameter>(
-    $ => new AST.Parameter($.location, $.name, $.type),
-    ["identifier"],
-    _ => (_.name = current.asIdentifer())
-  );
 }
