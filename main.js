@@ -3,7 +3,7 @@ const Q = require("./build/q");
 async function main() {
   Q.Utils.SetSingleFileHandler(
     `
-func a(X)
+funcx a(X)
 
 func b(X, Y)
 `.trim()
@@ -12,7 +12,7 @@ func b(X, Y)
   const source = Q.Source.Graph.getFile("./main.ema");
   const ast = await source.parse();
 
-  source.edit(8, 8, ", T");
+  // source.edit(8, 8, ", T");
 
   for (const err of source.getParseErrors()) {
     console.log(err.toString());

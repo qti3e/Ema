@@ -14,11 +14,6 @@ namespace Q.Source {
     private linesCache: string[] | undefined;
 
     /**
-     * Parse errors for this source file.
-     */
-    private parseErrors: Errors.ParseError[] = [];
-
-    /**
      * Cache of the line map used in lookupLineNumberAndColumn.
      */
     private lineLengthMapCache: number[] | undefined;
@@ -77,26 +72,23 @@ namespace Q.Source {
     }
 
     /**
-     * Add a new parse error to this source file.
-     *
-     * @param error The parse error which you want to report.
-     */
-    addParseError(error: Errors.ParseError) {
-      this.parseErrors.push(error);
-    }
-
-    /**
      * Return list of all the parse errors in this document.
      */
     getParseErrors() {
-      return this.parseErrors.slice();
+      if (!this.parseInfo) return [];
+
+      const errors: Errors.ParseError[] = [];
+      for (const node of this.parseInfo.AST) {
+        errors.push(...node.diagnostics);
+      }
+      return errors;
     }
 
     /**
      * Whatever this source file has any error or not.
      */
     get hasError() {
-      return this.parseErrors.length > 0;
+      return this.getParseErrors.length > 0;
     }
 
     /**

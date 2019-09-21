@@ -240,11 +240,12 @@ namespace Q.Scanner {
         }
       }
       // Report an error.
-      this.source.addParseError(
-        new Errors.UnterminatedStringLiteral(
-          new Source.Position(this.source, this.cursor)
-        )
-      );
+      // TODO(qti3e)
+      // this.source.addParseError(
+      //   new Errors.UnterminatedStringLiteral(
+      //     new Source.Position(this.source, this.cursor)
+      //   )
+      // );
       // But keep working :D
       return str;
     }
@@ -447,11 +448,12 @@ namespace Q.Scanner {
       }
 
       // Report an error.
-      this.source.addParseError(
-        new Errors.UnexpectedCharacterError(
-          new Source.Position(this.source, start)
-        )
-      );
+      // TODO(qti3e)
+      // this.source.addParseError(
+      //   new Errors.UnexpectedCharacterError(
+      //     new Source.Position(this.source, start)
+      //   )
+      // );
 
       // Yes there was an error an we reported it, but keep moving forward.
       // We always want to parse the source code even if it's in a broken

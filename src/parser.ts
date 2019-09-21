@@ -57,20 +57,6 @@ namespace Q.Parser {
       Object.assign(node, newNode);
       return;
     }
-
-    const containerNodes: AST.Node[] = [];
-    let currentToken = info.editHead;
-
-    for (let i = 0; i < info.numInserted; ++i) {
-      console.log("X")
-      const node = findContainingNode(nodes, currentToken.token!.position);
-      console.log("X")
-      containerNodes.push(node!);
-      currentToken = currentToken.next;
-    }
-
-    console.log(containerNodes);
-    console.log(info);
   }
 
   function findContainingNode(
@@ -127,10 +113,26 @@ namespace Q.Parser {
      * The token list head.
      */
     token: Scanner.TokenListEntityBase;
+
     /**
      * The match function.
      */
     fn: () => AST.Node | False;
+
+    /**
+     * The info about the array containing this Node.
+     */
+    array?: {
+      /**
+       * The containing array.
+       */
+      container: AST.Node[];
+
+      /**
+       * The index of this element in the array.
+       */
+      index: number;
+    };
   }
 
   /**
@@ -210,7 +212,7 @@ namespace Q.Parser {
     if (errorFrames.length) {
       errorFrames[errorFrames.length - 1].push(...errors);
     } else {
-      for (const error of errors) currentSource.addParseError(error);
+      throw new Error()
     }
   }
 
@@ -227,10 +229,11 @@ namespace Q.Parser {
    *
    * @param report Whatever to report the collected errors or ignore them.
    */
-  function popErrorFrame(report: boolean) {
+  function popErrorFrame(node: AST.Node | null) {
     const errors = errorFrames.pop();
     if (!errors) throw new Error("");
-    if (report) reportError(...errors);
+    if (!node) return;
+    node.diagnostics.push(...errors);
   }
 
   // !-----------------------Start of the matcher API.
@@ -339,7 +342,7 @@ namespace Q.Parser {
 
     const many = (matchers.length / 2) | 0 || 1;
 
-    const matcher = (): T | null => {
+    const matcher = (child: AST.Node[]): T | null => {
       const context: WritableContext<T> = {} as any;
       const start = current.token;
       let entity: Scanner.TokenListEntityBase;
@@ -361,6 +364,12 @@ namespace Q.Parser {
             token: entity,
             fn: () => current.asIdentifer()
           });
+        }
+
+        if (ret instanceof AST.Node) {
+          child.push(ret);
+        } else if (Array.isArray(ret)) {
+          child.push(...ret);
         }
 
         if (ret) {
@@ -398,18 +407,20 @@ namespace Q.Parser {
       store();
       // Start a new error frame.
       addErrorFrame();
-      const value = matcher();
+      const child: AST.Node[] = [];
+      const value = matcher(child);
       // Undo the changes to the cursor.
       if (value === null) {
         restore();
       } else {
+        child.map(node => (node.parent = value));
         constructedNodes.push(value);
         nodesMap.set(value, {
           token,
           fn
         });
       }
-      popErrorFrame(value !== null);
+      popErrorFrame(value);
       return value;
     };
 
